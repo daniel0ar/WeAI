@@ -91,16 +91,16 @@ html, body { height: 100%; overflow: hidden; }
 .radar-dot::after { content: ""; position: absolute; inset: -12px; border-radius: 50%; }
 .radar-dot.selected { box-shadow: 0 0 0 3px rgba(255, 196, 61, 0.35), 0 0 10px rgba(255, 196, 61, 0.9); }
 .dot-modal {
-  position: absolute; align-self: start; justify-self: start; /* opt out of the grid stretch from .radar > * */ z-index: var(--z-modal); display: grid; gap: 2px; width: min(300px, 80vw); padding: 12px;
+  position: absolute; align-self: start; justify-self: start; /* opt out of the grid stretch from .radar > * */ z-index: var(--z-modal); display: grid; gap: 2px; width: min(224px, 80vw); padding: 12px;
   background: #151c34; border: 1px solid #2b3560; border-radius: 10px; font-size: .85rem;
   animation: dot-modal-in .15s ease-out;
 }
-.dot-modal-photo { width: 100%; height: auto; aspect-ratio: 1; border-radius: 6px; margin-bottom: 6px; }
-.dot-modal-props { display: grid; gap: 2px; margin: 6px 0 0; padding-top: 6px; border-top: 1px solid #2b3560; }
+.dot-modal-photo { display: block; width: 200px; height: 200px; max-width: 100%; border-radius: 6px; margin-bottom: 6px; }
+.dot-modal-props { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 6px 0 0; padding-top: 6px; border-top: 1px solid #2b3560; }
 .dot-modal-props div { display: flex; justify-content: space-between; gap: 12px; }
 .dot-modal-props dt { color: #8b97bd; }
 .dot-modal-props dd { margin: 0; }
-.dot-modal-uuid { font-family: ui-monospace, monospace; font-size: .7rem; white-space: nowrap; }
+.dot-modal-uuid { font-family: ui-monospace, monospace; font-size: .7rem; overflow-wrap: anywhere; }
 .dot-modal span { color: #8b97bd; }
 .dot-modal.at-above { margin-top: -14px; --ty: -100%; }
 .dot-modal.at-below { margin-top: 14px; --ty: 0%; }
@@ -112,7 +112,8 @@ html, body { height: 100%; overflow: hidden; }
 .dot-modal.at-left { --ox: 12px; }
 .dot-modal.at-right { --ox: calc(100% - 12px); }
 .dot-modal-close {
-  position: absolute; top: 16px; right: 16px; width: 28px; height: 28px; padding: 0; border-radius: 50%;
+  position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; padding: 0; border-radius: 50%;
+  z-index: 1; /* above the photo, whose zoom transform would otherwise paint over it */
   background: rgba(11, 16, 32, 0.7); color: #e8ecf8; font-size: 1.2rem; line-height: 1;
 }
 @keyframes dot-modal-in {

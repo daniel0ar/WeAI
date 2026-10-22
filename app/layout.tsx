@@ -13,6 +13,8 @@ export const viewport: Viewport = {
   themeColor: "#0b1020",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 5, // pinch-to-zoom the whole app
+  userScalable: true,
   viewportFit: "cover",
 };
 

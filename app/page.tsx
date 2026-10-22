@@ -4,14 +4,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getUser } from "@/lib/auth";
 import { useBleScan } from "@/lib/useBleScan";
-import { DotModal, Radar, RADAR_RANGE_M, type Beacon } from "./_components/Radar";
+import { beaconKey, DotModal, Radar, RADAR_RANGE_M, TRIGGER_ATTR, type Beacon } from "./_components/Radar";
 
 export default function HomePage() {
   const router = useRouter();
   const [started, setStarted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [testBeacons, setTestBeacons] = useState<Beacon[]>([]);
-  // Picked list entry, by uuid:major:minor so it survives the periodic list refresh.
+  // The one open popup (list or radar), by beacon key so it survives the periodic list refresh.
   const [pickedKey, setPickedKey] = useState<string | null>(null);
   const ble = useBleScan();
 
@@ -82,10 +82,11 @@ export default function HomePage() {
             ...ble.beacons.map((b) => ({ ...b, detail: `${Math.round(b.rssi)} dBm` })),
             ...outOfRange.map((b) => ({ ...b, detail: `${Math.round(b.distance)}m` })),
           ].map((b) => {
-            const key = `${b.uuid}:${b.major}:${b.minor}`;
+            const key = beaconKey(b);
             return (
               <li key={key}>
                 <button
+                  {...{ [TRIGGER_ATTR]: "" }}
                   className={`far-row${key === pickedKey ? " selected" : ""}`}
                   aria-label={`${b.uuid}, major ${b.major}, minor ${b.minor}, ${b.detail}`}
                   onClick={() => setPickedKey(key === pickedKey ? null : key)}
@@ -106,7 +107,7 @@ export default function HomePage() {
         </ul>
       )}
 
-      <Radar active={ble.scanning} beacons={inRange} />
+      <Radar active={ble.scanning} beacons={inRange} selectedKey={pickedKey} onSelect={setPickedKey} />
 
       {ble.error && <p className="toast error">{ble.error}</p>}
       {!ble.supported && <p className="toast muted small">BLE scanning is only available in the Android app.</p>}
