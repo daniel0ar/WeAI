@@ -3,11 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MAP_H, MAP_W, STEP_M, startPosition } from "@/lib/mapData";
 
-const STEP_THRESHOLD = 2.0; // m/s² above the gravity baseline; small hand movements stay below it
-const MIN_STEP_MS = 350;
-// Walking is rhythmic: a lone bump is ignored, and only a run of steps counts.
-const MAX_GAP_MS = 1200;
-const STEPS_TO_CONFIRM = 3;
+// --- Tunables -------------------------------------------------------------
+// How hard a jolt must be to count as a step (m/s² above the gravity baseline).
+// Lower = more sensitive (small phone movements count), higher = less sensitive.
+const STEP_THRESHOLD = 1.0;
+// Minimum time between two steps, in ms. Raise it if one stride counts twice.
+const MIN_STEP_MS = 300;
+// How long the dot takes to glide to a new step position, in ms (see `frame` below).
+const GLIDE_MS = 120;
+// Length of one step in metres, the map size in mapData.ts is based on it.
+// (STEP_M, MAP_W and MAP_H live in lib/mapData.ts.)
+// ---------------------------------------------------------------------------
 
 // Compass heading (clockwise from north) of the way the phone is pointing:
 // its top edge when held flat, its back when held upright.
@@ -89,7 +95,6 @@ export function useDeadReckoning() {
     let low = 9.81;
     let armed = true;
     let lastStep = 0;
-    let run = 0;
     const onMotion = (e: DeviceMotionEvent) => {
       const a = e.accelerationIncludingGravity;
       if (!a || a.x === null || a.y === null || a.z === null) return;
@@ -100,17 +105,14 @@ export function useDeadReckoning() {
       const now = performance.now();
       if (armed && d > STEP_THRESHOLD && now - lastStep > MIN_STEP_MS) {
         armed = false;
-        run = now - lastStep > MAX_GAP_MS ? 1 : run + 1;
         lastStep = now;
-        if (reference.current === null || run < STEPS_TO_CONFIRM) return;
-        // The first confirmed run also credits the steps held back while confirming.
-        const taken = run === STEPS_TO_CONFIRM ? STEPS_TO_CONFIRM : 1;
+        if (reference.current === null) return;
         const rad = (relHeading.current * Math.PI) / 180;
-        setSteps((n) => n + taken);
+        setSteps((n) => n + 1);
         const t = target.current;
         target.current = {
-          x: Math.min(MAP_W, Math.max(0, t.x + taken * STEP_M * Math.sin(rad))),
-          y: Math.min(MAP_H, Math.max(0, t.y - taken * STEP_M * Math.cos(rad))),
+          x: Math.min(MAP_W, Math.max(0, t.x + STEP_M * Math.sin(rad))),
+          y: Math.min(MAP_H, Math.max(0, t.y - STEP_M * Math.cos(rad))),
         };
       } else if (d < STEP_THRESHOLD * 0.3) {
         armed = true;
@@ -129,7 +131,7 @@ export function useDeadReckoning() {
     let raf = 0;
     let prev = performance.now();
     const frame = (now: number) => {
-      const k = 1 - Math.exp(-(now - prev) / 120);
+      const k = 1 - Math.exp(-(now - prev) / GLIDE_MS);
       prev = now;
       setPos((p) => {
         const dx = target.current.x - p.x;

@@ -4,94 +4,112 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getUser } from "@/lib/auth";
 import { useBleScan } from "@/lib/useBleScan";
-import { useDeadReckoning } from "@/lib/useDeadReckoning";
-import { MapView } from "./_components/MapView";
+import { Radar, RADAR_RANGE_M, type Beacon } from "./_components/Radar";
 
 export default function HomePage() {
   const router = useRouter();
   const [started, setStarted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showResult, setShowResult] = useState(false);
+  const [testBeacons, setTestBeacons] = useState<Beacon[]>([]);
   const ble = useBleScan();
-  const nav = useDeadReckoning();
 
   useEffect(() => {
     if (!getUser()) router.replace("/login");
     else setStarted(true);
   }, [router]);
 
+  // Scanning is on by default once the user is signed in and BLE is available.
+  const { supported, start } = ble;
+  useEffect(() => {
+    if (started && supported) start();
+  }, [started, supported, start]);
+
   if (!started) return null;
 
-  function toggleScan() {
-    if (ble.scanning) {
-      ble.stop();
-      setShowResult(true);
-    } else {
-      setShowResult(false);
-      ble.start();
-    }
+  function generateTestBeacons() {
+    const n = 1 + Math.floor(Math.random() * 12);
+    setTestBeacons(
+      Array.from({ length: n }, (_, i) => ({
+        uuid: crypto.randomUUID(),
+        major: Math.floor(Math.random() * 65536),
+        minor: Math.floor(Math.random() * 65536),
+        distance: 1 + Math.random() * 49,
+        angle: Math.random() * 2 * Math.PI,
+      })),
+    );
+    setMenuOpen(false);
   }
+
+  function resetTestBeacons() {
+    setTestBeacons([]);
+    setMenuOpen(false);
+  }
+
+  // Real beacons are listed only: distance isn't measured yet, so they stay off the radar.
+  const inRange = testBeacons.filter((b) => b.distance <= RADAR_RANGE_M);
+  const outOfRange = testBeacons.filter((b) => b.distance > RADAR_RANGE_M).sort((a, b) => a.distance - b.distance);
 
   return (
     <main className="screen">
-      <MapView x={nav.pos.x} y={nav.pos.y} heading={nav.heading} />
-
-      <div className="menu">
+      <header className="topbar">
+        <span className="logo">WeAI</span>
         <button className="icon-btn" aria-label="Menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        {menuOpen && (
-          <div className="menu-panel">
-            <button
-              onClick={() => {
-                (nav.tracking ? nav.stop : nav.start)();
-                setMenuOpen(false);
-              }}
-            >
-              {nav.tracking ? "Stop tracking" : "Start tracking"}
-            </button>
-            <button
-              onClick={() => {
-                nav.reset();
-                setMenuOpen(false);
-              }}
-            >
-              Reset
-            </button>
-            <p className="muted small">
-              {nav.steps} steps · {Math.round(nav.heading)}°
-            </p>
-            {nav.error && <p className="error small">{nav.error}</p>}
-          </div>
-        )}
-      </div>
+      </header>
+      <p className="detected">Detected: {ble.beacons.length + testBeacons.length}</p>
+
+      {menuOpen && (
+        <div className="backdrop drawer-backdrop" onClick={() => setMenuOpen(false)}>
+          <nav className="drawer" aria-label="Menu" onClick={(e) => e.stopPropagation()}>
+            <button className="ghost" onClick={() => setMenuOpen(false)}>Close</button>
+            {testBeacons.length > 0 ? (
+              <button onClick={resetTestBeacons}>Reset</button>
+            ) : (
+              <button onClick={generateTestBeacons}>Test</button>
+            )}
+          </nav>
+        </div>
+      )}
+
+      {ble.beacons.length + outOfRange.length > 0 && (
+        <ul className="far-list" aria-label="Detected beacons">
+          {ble.beacons.map((b) => (
+            <li key={`${b.uuid}:${b.major}:${b.minor}`} aria-label={`${b.uuid}, major ${b.major}, minor ${b.minor}, ${Math.round(b.rssi)} dBm`}>
+              <span className="far-id">
+                <code className="far-uuid">{b.uuid}</code>
+                <span className="far-meta">Major {b.major} · Minor {b.minor}</span>
+              </span>
+              {Math.round(b.rssi)} dBm
+              <span className="far-dot" aria-hidden="true" />
+            </li>
+          ))}
+          {outOfRange.map((b) => (
+            <li key={`${b.uuid}:${b.major}:${b.minor}`} aria-label={`${b.uuid}, major ${b.major}, minor ${b.minor}, ${Math.round(b.distance)} meters`}>
+              <span className="far-id">
+                <code className="far-uuid">{b.uuid}</code>
+                <span className="far-meta">Major {b.major} · Minor {b.minor}</span>
+              </span>
+              {Math.round(b.distance)}m
+              <span className="far-dot" aria-hidden="true" />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Radar active={ble.scanning} beacons={inRange} />
 
       {ble.error && <p className="toast error">{ble.error}</p>}
       {!ble.supported && <p className="toast muted small">BLE scanning is only available in the Android app.</p>}
       <button
-        className={`fab${ble.scanning ? " scanning" : ""}`}
-        aria-label={ble.scanning ? "Stop Bluetooth scan" : "Start Bluetooth scan"}
+        className={`scan-btn${ble.scanning ? " scanning" : ""}`}
         disabled={!ble.supported}
-        onClick={toggleScan}
+        onClick={() => (ble.scanning ? ble.stop() : ble.start())}
       >
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M7 7l10 10-5 5V2l5 5L7 17" />
-        </svg>
+        {ble.scanning ? "Scanning" : "Scan"}
       </button>
-
-      {showResult && (
-        <div className="backdrop" onClick={() => setShowResult(false)}>
-          <div className="modal" role="dialog" aria-label="Robot count" onClick={(e) => e.stopPropagation()}>
-            <button className="close" aria-label="Close" onClick={() => setShowResult(false)}>
-              ×
-            </button>
-            <h2>Robot count</h2>
-            <p className="count">{ble.count}</p>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
