@@ -8,7 +8,8 @@ export const ZONE = { x: 0, y: MAP_H - 16 * STEP_M, w: 15 * STEP_M, h: 16 * STEP
 
 const DESK = { w: 3.2, h: 1.0 };
 const DESK_COLS = [1.2, 5.1, 9.0];
-const DESK_ROW_Y = [16.6, 18.5, 20.4, 22.3, 24.2];
+// Desks run from just above the 2nd left pillar down to the 3rd left pillar.
+const DESK_ROW_Y = [15.6, 17.6, 19.6, 21.6, 23.6];
 
 // Desks are numbered 1-15 left to right, top to bottom.
 export const desks = Array.from({ length: 15 }, (_, i) => ({
@@ -25,9 +26,9 @@ export const walls = [
   { x1: 29.5, y1: 3, x2: 29.5, y2: MAP_H },
 ];
 export const pillars = [
-  { x: 13.5, y: 5.4 },
-  { x: 13.5, y: 12.9 },
-  { x: 13.5, y: 22 },
+  { x: 13.5, y: 9 },
+  { x: 13.5, y: 16.5 },
+  { x: 13.5, y: 24.6 },
   { x: 29.5, y: 5.3 },
   { x: 29.5, y: 22 },
 ];
@@ -45,5 +46,5 @@ export const START_DESK = 12;
 export function startPosition() {
   const d = desks[START_DESK - 1];
   // Chair side of the desk, facing map-up (towards the desk).
-  return { x: d.x + d.w / 2, y: d.y + d.h + 0.45 };
+  return { x: d.x + d.w / 2, y: d.y + d.h + 0.5 };
 }
