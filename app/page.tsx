@@ -1,69 +1,83 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
 
-export default function Home() {
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getUser, logout } from "@/lib/auth";
+import { useGps } from "@/lib/useGps";
+import { useBleScan } from "@/lib/useBleScan";
+
+export default function HomePage() {
+  const router = useRouter();
+  const [started, setStarted] = useState(false);
+  const gps = useGps();
+  const ble = useBleScan();
+
+  useEffect(() => {
+    if (!getUser()) router.replace("/login");
+    else setStarted(true);
+  }, [router]);
+
+  if (!started) return null;
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="center">
+      <div className="card wide">
+        <header className="row">
+          <h1>RobotFind</h1>
+          <button
+            className="ghost"
+            onClick={() => {
+              ble.stop();
+              logout();
+              router.replace("/login");
+            }}
           >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            Exit
+          </button>
+        </header>
+
+        <section>
+          <h2>GPS location</h2>
+          {gps.error && <p className="error">{gps.error}</p>}
+          {gps.position ? (
+            <dl>
+              <dt>Latitude</dt>
+              <dd>{gps.position.latitude.toFixed(6)}</dd>
+              <dt>Longitude</dt>
+              <dd>{gps.position.longitude.toFixed(6)}</dd>
+              <dt>Accuracy</dt>
+              <dd>±{Math.round(gps.position.accuracy)} m</dd>
+            </dl>
+          ) : gps.permission === "denied" ? (
+            <p className="muted small">
+              Location is blocked for this site. Click the icon left of the address bar, allow Location, then reload.
+            </p>
+          ) : gps.permission === "granted" ? (
+            <p className="muted">Waiting for location…</p>
+          ) : (
+            <button onClick={gps.start}>Enable location</button>
+          )}
+        </section>
+
+        <section>
+          <h2>Bluetooth LE devices</h2>
+          <p className="count">{ble.count}</p>
+          <p className="muted small">unique devices detected this scan</p>
+          {ble.error && <p className="error">{ble.error}</p>}
+          {ble.supported ? (
+            ble.scanning ? (
+              <button onClick={ble.stop}>Stop scan</button>
+            ) : (
+              <button onClick={ble.start}>Start scan</button>
+            )
+          ) : (
+            <p className="muted small">
+              BLE scanning is unavailable here. It needs Chrome/Edge over HTTPS with{" "}
+              <code>chrome://flags/#enable-experimental-web-platform-features</code> enabled.
+            </p>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }
