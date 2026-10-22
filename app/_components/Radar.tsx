@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 // Ring diameters as a share of the radar's width, one per range label.
 const RINGS = [
@@ -35,6 +35,45 @@ function position(b: Beacon) {
   return { x: 50 + r * Math.cos(b.angle), y: 50 + r * Math.sin(b.angle) };
 }
 
+const DUMMY_PROPERTIES = Array.from({ length: 6 }, (_, i) => [`property${i + 1}`, `name${i + 1}`] as const);
+
+// Closable popover anchored at a beacon dot; the at-* classes in className pick which side it opens to.
+export function DotModal({
+  beacon,
+  detail,
+  className,
+  style,
+  onClose,
+}: {
+  beacon: { uuid: string; major: number; minor: number };
+  detail: string;
+  className: string;
+  style?: CSSProperties;
+  onClose: () => void;
+}) {
+  return (
+    <div className={`dot-modal ${className}`} role="dialog" aria-label={beacon.uuid} style={style}>
+      <button className="dot-modal-close" aria-label="Close" onClick={onClose}>
+        ×
+      </button>
+      {/* Plain img: the placeholder is a static local file, nothing for next/image to optimize. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="dot-modal-photo" src="/robot-placeholder.svg" width={300} height={300} alt="Robot" />
+      <strong className="dot-modal-uuid">{beacon.uuid}</strong>
+      <span>Major {beacon.major} · Minor {beacon.minor}</span>
+      <span>{detail}</span>
+      <dl className="dot-modal-props">
+        {DUMMY_PROPERTIES.map(([k, v]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 export function Radar({ active, beacons = [] }: { active: boolean; beacons?: Beacon[] }) {
   const [picked, setPicked] = useState<Beacon | null>(null);
   // Compared by reference so a regenerated set never inherits an old selection.
@@ -65,14 +104,13 @@ export function Radar({ active, beacons = [] }: { active: boolean; beacons?: Bea
         const h = x < 30 ? "at-left" : x > 70 ? "at-right" : "at-center";
         const v = y < 50 ? "at-below" : "at-above";
         return (
-          <div className={`dot-modal ${h} ${v}`} role="dialog" aria-label={selected.uuid} style={{ left: `${x}%`, top: `${y}%` }}>
-            <button className="dot-modal-close" aria-label="Close" onClick={() => setPicked(null)}>
-              ×
-            </button>
-            <strong className="dot-modal-uuid">{selected.uuid}</strong>
-            <span>Major {selected.major} · Minor {selected.minor}</span>
-            <span>{selected.distance.toFixed(1)}m</span>
-          </div>
+          <DotModal
+            beacon={selected}
+            detail={`${selected.distance.toFixed(1)}m`}
+            className={`${h} ${v}`}
+            style={{ left: `${x}%`, top: `${y}%` }}
+            onClose={() => setPicked(null)}
+          />
         );
       })()}
       <svg className="radar-me" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

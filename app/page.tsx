@@ -4,13 +4,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getUser } from "@/lib/auth";
 import { useBleScan } from "@/lib/useBleScan";
-import { Radar, RADAR_RANGE_M, type Beacon } from "./_components/Radar";
+import { DotModal, Radar, RADAR_RANGE_M, type Beacon } from "./_components/Radar";
 
 export default function HomePage() {
   const router = useRouter();
   const [started, setStarted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [testBeacons, setTestBeacons] = useState<Beacon[]>([]);
+  // Picked list entry, by uuid:major:minor so it survives the periodic list refresh.
+  const [pickedKey, setPickedKey] = useState<string | null>(null);
   const ble = useBleScan();
 
   useEffect(() => {
@@ -76,26 +78,31 @@ export default function HomePage() {
 
       {ble.beacons.length + outOfRange.length > 0 && (
         <ul className="far-list" aria-label="Detected beacons">
-          {ble.beacons.map((b) => (
-            <li key={`${b.uuid}:${b.major}:${b.minor}`} aria-label={`${b.uuid}, major ${b.major}, minor ${b.minor}, ${Math.round(b.rssi)} dBm`}>
-              <span className="far-id">
-                <code className="far-uuid">{b.uuid}</code>
-                <span className="far-meta">Major {b.major} · Minor {b.minor}</span>
-              </span>
-              {Math.round(b.rssi)} dBm
-              <span className="far-dot" aria-hidden="true" />
-            </li>
-          ))}
-          {outOfRange.map((b) => (
-            <li key={`${b.uuid}:${b.major}:${b.minor}`} aria-label={`${b.uuid}, major ${b.major}, minor ${b.minor}, ${Math.round(b.distance)} meters`}>
-              <span className="far-id">
-                <code className="far-uuid">{b.uuid}</code>
-                <span className="far-meta">Major {b.major} · Minor {b.minor}</span>
-              </span>
-              {Math.round(b.distance)}m
-              <span className="far-dot" aria-hidden="true" />
-            </li>
-          ))}
+          {[
+            ...ble.beacons.map((b) => ({ ...b, detail: `${Math.round(b.rssi)} dBm` })),
+            ...outOfRange.map((b) => ({ ...b, detail: `${Math.round(b.distance)}m` })),
+          ].map((b) => {
+            const key = `${b.uuid}:${b.major}:${b.minor}`;
+            return (
+              <li key={key}>
+                <button
+                  className={`far-row${key === pickedKey ? " selected" : ""}`}
+                  aria-label={`${b.uuid}, major ${b.major}, minor ${b.minor}, ${b.detail}`}
+                  onClick={() => setPickedKey(key === pickedKey ? null : key)}
+                >
+                  <span className="far-id">
+                    <code className="far-uuid">{b.uuid}</code>
+                    <span className="far-meta">Major {b.major} · Minor {b.minor}</span>
+                  </span>
+                  {b.detail}
+                  <span className="far-dot" aria-hidden="true" />
+                </button>
+                {key === pickedKey && (
+                  <DotModal beacon={b} detail={b.detail} className="at-right at-below" onClose={() => setPickedKey(null)} />
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 

@@ -16,8 +16,9 @@ type BluetoothWithScan = Bluetooth & {
 type AdvertisementEvent = Event & { manufacturerData: Map<number, DataView>; rssi?: number };
 
 const RSSI_SMOOTHING = 0.3; // EMA weight of the newest sample
-const PUBLISH_MS = 500;
-const STALE_MS = 5000; // beacons advertise every 200 ms, so this is ~25 missed frames
+const PUBLISH_MS = 5000;
+// Kept for two missed update windows, so one quiet window doesn't make a beacon blink out.
+const STALE_MS = 15000;
 
 export interface DetectedBeacon {
   uuid: string;
@@ -90,7 +91,8 @@ export function useBleScan() {
         if (now - t.seenAt > STALE_MS) tracked.current.delete(key);
         else list.push({ uuid: t.uuid, major: t.major, minor: t.minor, rssi: t.rssi });
       }
-      setBeacons(list.sort((a, b) => b.rssi - a.rssi));
+      // Fixed order so entries don't swap places as their RSSI fluctuates.
+      setBeacons(list.sort((a, b) => a.uuid.localeCompare(b.uuid) || a.major - b.major || a.minor - b.minor));
     }, PUBLISH_MS);
     try {
       if (isNative()) {
