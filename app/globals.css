@@ -15,7 +15,7 @@ body {
 h1 { margin: 0; font-size: 1.4rem; }
 h2 { margin: 0 0 8px; font-size: 1rem; color: #9aa7d0; font-weight: 600; }
 label { display: grid; gap: 6px; font-size: .9rem; }
-input {
+input, select {
   padding: 10px 12px; border-radius: 8px; border: 1px solid #2b3560;
   background: #0b1020; color: inherit; font-size: 1rem;
 }
@@ -28,6 +28,7 @@ button.ghost { background: transparent; border: 1px solid #2b3560; font-size: .8
 .muted { color: #8b97bd; margin: 0; }
 .small { font-size: .8rem; }
 .error { color: #ff8a8a; margin: 0 0 8px; }
+.ok { color: #5bd69a; margin: 0; }
 .count { font-size: 3.5rem; font-weight: 700; margin: 0; line-height: 1; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0; }
 dt { color: #8b97bd; }
@@ -95,12 +96,13 @@ html, body { height: 100%; overflow: hidden; }
   background: #151c34; border: 1px solid #2b3560; border-radius: 10px; font-size: .85rem;
   animation: dot-modal-in .15s ease-out;
 }
-.dot-modal-photo { display: block; width: 200px; height: 200px; max-width: 100%; border-radius: 6px; margin-bottom: 6px; }
+.dot-modal-photo { display: block; width: 200px; height: 200px; max-width: 100%; border-radius: 6px; margin-bottom: 6px; object-fit: contain; background: #0b1020; }
+.dot-modal-title { font-size: 1rem; }
 .dot-modal-props { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 6px 0 0; padding-top: 6px; border-top: 1px solid #2b3560; }
 .dot-modal-props div { display: flex; justify-content: space-between; gap: 12px; }
 .dot-modal-props dt { color: #8b97bd; }
 .dot-modal-props dd { margin: 0; }
-.dot-modal-uuid { font-family: ui-monospace, monospace; font-size: .7rem; overflow-wrap: anywhere; }
+.dot-modal-uuid { font-family: ui-monospace, monospace; font-size: .65rem; color: #8b97bd; word-break: normal; overflow-wrap: anywhere; margin-top: 6px; }
 .dot-modal span { color: #8b97bd; }
 .dot-modal.at-above { margin-top: -14px; --ty: -100%; }
 .dot-modal.at-below { margin-top: 14px; --ty: 0%; }
@@ -127,6 +129,7 @@ html, body { height: 100%; overflow: hidden; }
 }
 .far-list li { position: relative; }  /* anchor for the modal; no z-index, so it is no stacking context */
 .far-uuid { font-size: .7rem; word-break: normal; }
+.far-name { font-size: .85rem; font-weight: 600; color: #e8ecf8; max-width: 62vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .far-id { display: grid; justify-items: end; line-height: 1.2; }
 .far-meta { font-size: .65rem; }
 /* The whole row is the tap target. */
@@ -181,7 +184,7 @@ html, body { height: 100%; overflow: hidden; }
   background: transparent; color: #8b97bd; font-size: 1.6rem; line-height: 1;
 }
 
-.calib {
+.calib, .sheet {
   position: absolute; inset: 0; z-index: 20; overflow-y: auto; background: #0b1020;
   display: grid; align-content: start; gap: 14px;
   padding: calc(16px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
@@ -201,3 +204,22 @@ html, body { height: 100%; overflow: hidden; }
 .calib-list button { width: 64px; }
 .calib-list button.current { border-color: #ffc43d; color: #ffc43d; }
 .calib-result { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: #151c34; }
+
+/* Add robot */
+.sheet h2 { margin: 6px 0 0; }
+.sheet input, .sheet select { width: 100%; min-width: 0; }
+.form-pair { display: grid; grid-template-columns: 6rem 1fr; gap: 10px; }
+label.invalid input, label.invalid select { border-color: #ff8a8a; }
+.field-hint { color: #8b97bd; font-size: .75rem; margin: 0; }
+.field-error { color: #ff8a8a; font-size: .75rem; }
+.photo-row { display: flex; align-items: center; gap: 12px; }
+.photo-preview { flex: none; width: 96px; height: 96px; border-radius: 8px; object-fit: contain; background: #151c34; border: 1px solid #2b3560; }
+.photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.saved-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.saved-list li { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 10px; background: #151c34; border: 1px solid transparent; }
+.saved-list li.current { border-color: #ffc43d; }
+.saved-list img { flex: none; width: 48px; height: 48px; border-radius: 6px; object-fit: contain; background: #0b1020; }
+.saved-info { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: .85rem; }
+.saved-actions { display: grid; gap: 6px; }
+.saved-actions button { padding: 6px 10px; font-size: .8rem; }
+button.danger { background: #c94a4a; border: 1px solid #c94a4a; }

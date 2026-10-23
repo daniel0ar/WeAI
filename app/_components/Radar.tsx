@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { robotTitle, type RobotRecord } from "@/lib/robots";
+import { describe, type RobotMeta } from "@/lib/weaiUuid";
 
 // Ring diameters as a share of the radar's width, one per range label.
 const RINGS = [
@@ -13,7 +15,12 @@ export interface Beacon {
   minor: number; // 0-65535
   distance: number; // meters
   angle: number; // radians, only used for placement
+  meta: RobotMeta | null; // decoded from the UUID; null when the UUID is not in the WeAI v1 format
+  robot?: RobotRecord; // names and photo saved on this phone for its brand and model
 }
+
+// Every Major-5 beacon is shown; those without saved names are unknown robots.
+export const robotLabel = (b: Beacon) => (b.robot ? robotTitle(b.robot) : "Unknown robot");
 
 export const RADAR_RANGE_M = 20;
 
@@ -91,8 +98,6 @@ function layout(beacons: Beacon[], radarPx: number) {
   return pts;
 }
 
-const DUMMY_PROPERTIES = Array.from({ length: 6 }, (_, i) => [`property${i + 1}`, `name${i + 1}`] as const);
-
 export const beaconKey = (b: { uuid: string; major: number; minor: number }) => `${b.uuid}:${b.major}:${b.minor}`;
 
 // Tap/click targets that open a DotModal. They handle their own toggling, so DotModal's
@@ -111,7 +116,7 @@ export function DotModal({
   style,
   onClose,
 }: {
-  beacon: { uuid: string; major: number; minor: number };
+  beacon: Beacon;
   detail: string;
   className: string;
   style?: CSSProperties;
@@ -154,32 +159,44 @@ export function DotModal({
   }, [onClose]);
 
   const classes = fit ? className.replace(/at-(above|below)/, `at-${fit.side}`) : className;
+  const label = robotLabel(beacon);
+  const { meta, robot } = beacon;
 
   return (
     <div
       ref={ref}
       className={`dot-modal ${classes}`}
       role="dialog"
-      aria-label={beacon.uuid}
+      aria-label={label}
       style={{ ...style, marginTop: fit?.shift }}
     >
       <button className="dot-modal-close" aria-label="Close" onClick={onClose}>
         ×
       </button>
-      {/* Plain img: a static local file, nothing for next/image to optimize. */}
+      {/* Plain img: a local file or a saved data URL, nothing for next/image to optimize. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="dot-modal-photo" src="/robot-placeholder.svg" width={PHOTO_SIZE} height={PHOTO_SIZE} alt="Robot" />
-      <strong className="dot-modal-uuid">{beacon.uuid}</strong>
-      <span>Major {beacon.major} · Minor {beacon.minor}</span>
+      <img className="dot-modal-photo" src={robot?.photo || "/robot-placeholder.svg"} width={PHOTO_SIZE} height={PHOTO_SIZE} alt={label} />
+      <strong className="dot-modal-title">{label}</strong>
+      {meta ? (
+        <span>
+          Robot #{meta.robotNo} · Brand {meta.brand} · Model {meta.model}
+        </span>
+      ) : (
+        <span>This robot is not yet identified.</span>
+      )}
+      {meta && !robot && <span>No names or photo saved for this brand and model.</span>}
       <span>{detail}</span>
-      <dl className="dot-modal-props">
-        {DUMMY_PROPERTIES.map(([k, v]) => (
-          <div key={k}>
-            <dt>{k}</dt>
-            <dd>{v}</dd>
-          </div>
-        ))}
-      </dl>
+      {meta && (
+        <dl className="dot-modal-props">
+          {describe(meta).map(([k, v]) => (
+            <div key={k}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <code className="dot-modal-uuid">{beacon.uuid}</code>
     </div>
   );
 }
@@ -222,7 +239,7 @@ export function Radar({
             key={beaconKey(b)}
             {...{ [TRIGGER_ATTR]: "" }}
             className={`radar-dot${b === selected ? " selected" : ""}`}
-            aria-label={`${b.uuid}, major ${b.major}, minor ${b.minor}, ${b.distance.toFixed(1)} meters`}
+            aria-label={`${robotLabel(b)}, ${b.distance.toFixed(1)} meters`}
             style={{ left: `${x}%`, top: `${y}%` }}
             onClick={() => onSelect(b === selected ? null : beaconKey(b))}
           />
