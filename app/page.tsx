@@ -3,10 +3,18 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getUser } from "@/lib/auth";
-import { distanceFromRssi, loadCalibration, type CalibrationPoint } from "@/lib/calibration";
+import { CALIBRATION_DISTANCES, distanceFromRssi, loadCalibration, type CalibrationPoint } from "@/lib/calibration";
 import { useBleScan, type RawSample } from "@/lib/useBleScan";
 import { Calibration } from "./_components/Calibration";
 import { beaconKey, DotModal, Radar, RADAR_RANGE_M, TRIGGER_ATTR, type Beacon } from "./_components/Radar";
+
+// There is no bearing to a beacon, only distance, so each one gets a fixed angle derived from its
+// identity. That keeps its dot from jumping around the radar between updates.
+function angleFor(key: string) {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return (h / 2 ** 32) * 2 * Math.PI;
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -61,8 +69,19 @@ export default function HomePage() {
     setMenuOpen(false);
   }
 
-  // Real beacons are listed only: distance isn't measured yet, so they stay off the radar.
-  const inRange = testBeacons.filter((b) => b.distance <= RADAR_RANGE_M);
+  // Real beacons go on the radar only once all calibration distances are measured and they are
+  // within range; until then, or when farther, they stay in the list.
+  const calibrated = CALIBRATION_DISTANCES.every((d) => calibration.some((p) => p.distance === d));
+  const real: Beacon[] = ble.beacons.map((b) => ({
+    uuid: b.uuid,
+    major: b.major,
+    minor: b.minor,
+    distance: distanceFromRssi(b.rssi, b.rssiAt1m, calibration),
+    angle: angleFor(beaconKey(b)),
+  }));
+  const onRadar = (b: Beacon) => b.distance < RADAR_RANGE_M;
+  const realListed = calibrated ? real.filter((b) => !onRadar(b)) : real;
+  const inRange = [...(calibrated ? real.filter(onRadar) : []), ...testBeacons.filter((b) => b.distance <= RADAR_RANGE_M)];
   const outOfRange = testBeacons.filter((b) => b.distance > RADAR_RANGE_M).sort((a, b) => a.distance - b.distance);
 
   return (
@@ -98,15 +117,16 @@ export default function HomePage() {
         </div>
       )}
 
-      {ble.beacons.length + outOfRange.length > 0 && (
+      {realListed.length + outOfRange.length > 0 && (
         <ul className="far-list" aria-label="Detected beacons">
           {[
-            ...ble.beacons.map((b) => ({
-              ...b,
-              detail: `${distanceFromRssi(b.rssi, b.rssiAt1m, calibration).toFixed(1)}m`,
-            })),
-            ...outOfRange.map((b) => ({ ...b, detail: `${Math.round(b.distance)}m` })),
-          ].map((b) => {
+            ...realListed,
+            ...outOfRange,
+          ]
+            // Farthest first.
+            .sort((a, b) => b.distance - a.distance)
+            .map((b) => ({ ...b, detail: b.distance >= RADAR_RANGE_M ? `>${RADAR_RANGE_M}m` : `${b.distance.toFixed(1)}m` }))
+            .map((b) => {
             const key = beaconKey(b);
             return (
               <li key={key}>

@@ -35,6 +35,62 @@ function position(b: Beacon) {
   return { x: 50 + r * Math.cos(b.angle), y: 50 + r * Math.sin(b.angle) };
 }
 
+// Minimum distance between dot centres: the 10px dot plus a visible gap.
+const MIN_GAP_PX = 16;
+
+// Places every dot at its distance-based spot, then pushes overlapping dots apart until each pair is at
+// least MIN_GAP_PX apart, so no dot hides another. Positions are in % of the radar width.
+function layout(beacons: Beacon[], radarPx: number) {
+  const targets = beacons.map(position);
+  const pts = targets.map((p) => ({ ...p }));
+  const min = (MIN_GAP_PX / radarPx) * 100;
+  const ITERATIONS = 200;
+  for (let it = 0; it < ITERATIONS; it++) {
+    // Early on, drift back toward the true spot so dots move only as far as needed; the last
+    // iterations only separate, so the result never ends with an overlap.
+    if (it < ITERATIONS * 0.7) {
+      for (let i = 0; i < pts.length; i++) {
+        pts[i].x += 0.1 * (targets[i].x - pts[i].x);
+        pts[i].y += 0.1 * (targets[i].y - pts[i].y);
+      }
+    }
+    let moved = false;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        let dx = pts[j].x - pts[i].x;
+        let dy = pts[j].y - pts[i].y;
+        let d = Math.hypot(dx, dy);
+        if (d >= min) continue;
+        if (d < 1e-6) {
+          // Same spot: split them along a fixed direction picked from their order.
+          const a = (i + j) * 2.39996;
+          dx = Math.cos(a);
+          dy = Math.sin(a);
+          d = 1;
+        }
+        const push = (min - Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y)) / 2;
+        pts[i].x -= (dx / d) * push;
+        pts[i].y -= (dy / d) * push;
+        pts[j].x += (dx / d) * push;
+        pts[j].y += (dy / d) * push;
+        moved = true;
+      }
+    }
+    // Keep every dot inside the outer ring.
+    for (const p of pts) {
+      const dx = p.x - 50;
+      const dy = p.y - 50;
+      const d = Math.hypot(dx, dy);
+      if (d > 50) {
+        p.x = 50 + (dx / d) * 50;
+        p.y = 50 + (dy / d) * 50;
+      }
+    }
+    if (!moved && it >= ITERATIONS * 0.7) break;
+  }
+  return pts;
+}
+
 const DUMMY_PROPERTIES = Array.from({ length: 6 }, (_, i) => [`property${i + 1}`, `name${i + 1}`] as const);
 
 export const beaconKey = (b: { uuid: string; major: number; minor: number }) => `${b.uuid}:${b.major}:${b.minor}`;
@@ -140,17 +196,27 @@ export function Radar({
   onSelect: (key: string | null) => void;
 }) {
   const selected = beacons.find((b) => beaconKey(b) === selectedKey) ?? null;
+  const ref = useRef<HTMLDivElement>(null);
+  const [radarPx, setRadarPx] = useState(340);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setRadarPx(e.contentRect.width || 340));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const spots = layout(beacons, radarPx);
 
   return (
-    <div className="radar" aria-label="Radar">
+    <div ref={ref} className="radar" aria-label="Radar">
       {active && <span className="radar-pulse" />}
       {RINGS.map((r) => (
         <div key={r.meters} className="radar-ring" style={{ width: `${r.size}%`, height: `${r.size}%` }}>
           <span className="radar-label">{r.meters}m</span>
         </div>
       ))}
-      {beacons.map((b) => {
-        const { x, y } = position(b);
+      {beacons.map((b, i) => {
+        const { x, y } = spots[i];
         return (
           <button
             key={beaconKey(b)}
@@ -163,7 +229,7 @@ export function Radar({
         );
       })}
       {selected && (() => {
-        const { x, y } = position(selected);
+        const { x, y } = spots[beacons.indexOf(selected)];
         const h = x < 30 ? "at-left" : x > 70 ? "at-right" : "at-center";
         const v = y < 50 ? "at-below" : "at-above";
         return (
