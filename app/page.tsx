@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getUser } from "@/lib/auth";
+import { distanceFromRssi, loadCalibration, type CalibrationPoint } from "@/lib/calibration";
 import { useBleScan, type RawSample } from "@/lib/useBleScan";
 import { Calibration } from "./_components/Calibration";
 import { beaconKey, DotModal, Radar, RADAR_RANGE_M, TRIGGER_ATTR, type Beacon } from "./_components/Radar";
@@ -15,6 +16,7 @@ export default function HomePage() {
   // The one open popup (list or radar), by beacon key so it survives the periodic list refresh.
   const [pickedKey, setPickedKey] = useState<string | null>(null);
   const [calibrating, setCalibrating] = useState(false);
+  const [calibration, setCalibration] = useState<CalibrationPoint[]>([]);
   const sampleSink = useRef<((s: RawSample) => void) | null>(null);
   const subscribeSamples = useCallback((fn: (s: RawSample) => void) => {
     sampleSink.current = fn;
@@ -26,7 +28,10 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!getUser()) router.replace("/login");
-    else setStarted(true);
+    else {
+      setCalibration(loadCalibration());
+      setStarted(true);
+    }
   }, [router]);
 
   // Scanning is on by default once the user is signed in and BLE is available.
@@ -96,7 +101,10 @@ export default function HomePage() {
       {ble.beacons.length + outOfRange.length > 0 && (
         <ul className="far-list" aria-label="Detected beacons">
           {[
-            ...ble.beacons.map((b) => ({ ...b, detail: `${Math.round(b.rssi)} dBm` })),
+            ...ble.beacons.map((b) => ({
+              ...b,
+              detail: `${distanceFromRssi(b.rssi, b.rssiAt1m, calibration).toFixed(1)}m`,
+            })),
             ...outOfRange.map((b) => ({ ...b, detail: `${Math.round(b.distance)}m` })),
           ].map((b) => {
             const key = beaconKey(b);
@@ -127,7 +135,14 @@ export default function HomePage() {
       <Radar active={ble.scanning} beacons={inRange} selectedKey={pickedKey} onSelect={setPickedKey} />
 
       {calibrating && (
-        <Calibration subscribe={subscribeSamples} scanning={ble.scanning} start={ble.start} onClose={() => setCalibrating(false)} />
+        <Calibration
+          subscribe={subscribeSamples}
+          scanning={ble.scanning}
+          start={ble.start}
+          points={calibration}
+          onChange={setCalibration}
+          onClose={() => setCalibrating(false)}
+        />
       )}
 
       {ble.error && <p className="toast error">{ble.error}</p>}

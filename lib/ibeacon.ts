@@ -2,31 +2,22 @@
 //   0x02 0x15 | UUID (16) | major (2, BE) | minor (2, BE) | measured power @1m (int8)
 export const APPLE_COMPANY_ID = 0x004c;
 
-// Calibration of the deployed beacons.
-export const DEFAULT_RSSI_AT_1M = -64; // dBm
-// Path-loss exponent: ~2 in free space, 2.5-3 indoors. Raise it if distances read too far.
-export const PATH_LOSS_EXPONENT = 2.5;
+// Every beacon of ours advertises major 5; anything else is ignored.
+export const OUR_MAJOR = 5;
 
-// Our beacons. Omit major/minor to match every beacon with that UUID.
-// While this list is empty, every iBeacon in range is shown.
-export const OUR_BEACONS: { uuid: string; major?: number; minor?: number }[] = [];
+// Used only when a beacon advertises 0 (measured power not set).
+export const FALLBACK_RSSI_AT_1M = -65; // dBm
 
-export function isOurs(f: { uuid: string; major: number; minor: number }) {
-  return (
-    OUR_BEACONS.length === 0 ||
-    OUR_BEACONS.some(
-      (b) =>
-        b.uuid.toLowerCase() === f.uuid &&
-        (b.major === undefined || b.major === f.major) &&
-        (b.minor === undefined || b.minor === f.minor),
-    )
-  );
+export function isOurs(f: { major: number }) {
+  return f.major === OUR_MAJOR;
 }
 
 export interface IBeaconFrame {
   uuid: string;
   major: number;
   minor: number;
+  // RSSI the beacon says it gives at exactly 1 m (its advertised measured power),
+  // or FALLBACK_RSSI_AT_1M when it advertises 0, which means "not set".
   rssiAt1m: number;
 }
 
@@ -38,12 +29,6 @@ export function parseIBeacon(data: DataView): IBeaconFrame | null {
     uuid,
     major: data.getUint16(18, false),
     minor: data.getUint16(20, false),
-    rssiAt1m: data.getInt8(22) || DEFAULT_RSSI_AT_1M,
+    rssiAt1m: data.getInt8(22) || FALLBACK_RSSI_AT_1M,
   };
-}
-
-// Log-distance path-loss model: d = 10^((RSSI@1m - RSSI) / (10 n)).
-// A calibration measured with this phone (see lib/calibration.ts) overrides the beacon's advertised values.
-export function distanceFromRssi(rssi: number, rssiAt1m: number, cal?: { rssiAt1m: number; n: number }) {
-  return 10 ** (((cal?.rssiAt1m ?? rssiAt1m) - rssi) / (10 * (cal?.n ?? PATH_LOSS_EXPONENT)));
 }

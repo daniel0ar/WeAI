@@ -1,65 +1,88 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { fitCalibration, median, percentile, rejectOutliers, saveCalibration, stdev } from "@/lib/calibration";
-import { distanceFromRssi } from "@/lib/ibeacon";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CALIBRATION_DISTANCES,
+  distanceFromRssi,
+  median,
+  pathLossExponent,
+  rejectOutliers,
+  resetCalibration,
+  saveCalibrationPoint,
+  stdev,
+  type CalibrationPoint,
+} from "@/lib/calibration";
 import type { RawSample } from "@/lib/useBleScan";
 
-// "check" distances are held out of the fit, so the error on them is an honest accuracy estimate.
-const POINTS: { d: number; check?: boolean }[] = [
-  { d: 1 }, { d: 2 }, { d: 3 }, { d: 4, check: true }, { d: 5 }, { d: 6, check: true }, { d: 8 }, { d: 10 },
-];
 // The phone stays put and the body turns, since the antenna pattern of phone and beacon is far from round.
 const HEADINGS = ["Facing the beacon", "Turn 90° right", "Turn 90° right (back to the beacon)", "Turn 90° right (left side to the beacon)"];
 const SETTLE_S = 4; // time to get into position before sampling starts
-const RECORD_S = 15; // per heading
-// A heading keeps recording past RECORD_S until it has TARGET_SAMPLES, up to MAX_RECORD_S. Dips happen
-// (body between phone and beacon, Android dropping packets); if it is still short at the cap it is
-// kept with a warning rather than discarding the headings already done.
-const TARGET_SAMPLES = 30;
-const MAX_RECORD_S = 30;
-const MIN_SAMPLES = 3;
+const RECORD_S = 15; // per heading, so 60 s per distance
+// Beacons advertise every 1.5 s, so 15 s should give ~10 samples. With fewer than MIN_SAMPLES the heading
+// is extended once by EXTEND_S; if still short it pauses (keeping what it has) and lets you extend again.
+const EXTEND_S = 10;
+const MIN_SAMPLES = 4;
+const LIVE_MS = 5000; // a beacon counts as "in range" if heard this recently
 
-type Phase = "idle" | "settle" | "record";
-interface Result {
-  median: number;
-  sd: number;
-  count: number;
-  dropped: number; // outliers rejected
-  spread: number; // dB between the highest and lowest heading median
-  short: number; // headings that ended with fewer than TARGET_SAMPLES
+type Phase = "idle" | "settle" | "record" | "stalled";
+interface Heard {
+  uuid: string;
+  rssiAt1m: number;
+  rssi: number;
+  at: number;
+}
+
+// The beacon is picked by the end of its UUID (0001, 0002, …), typed by hand.
+const normalize = (suffix: string) => suffix.trim().toLowerCase();
+
+interface Snapshot {
+  now: number;
+  phase: Phase;
+  heading: number;
+  elapsed: number; // s in the current settle/record phase
+  until: number; // s the record phase runs to
+  count: number; // samples at the current heading
+  heard: Heard[];
 }
 
 export function Calibration({
   subscribe,
   scanning,
   start,
+  points,
+  onChange,
   onClose,
 }: {
   subscribe: (fn: (s: RawSample) => void) => () => void;
   scanning: boolean;
   start: () => void;
+  points: CalibrationPoint[];
+  onChange: (points: CalibrationPoint[]) => void;
   onClose: () => void;
 }) {
   const [suffix, setSuffix] = useState("0001");
-  const [step, setStep] = useState(0);
-  const [heading, setHeading] = useState(0);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [elapsed, setElapsed] = useState(0);
-  const [results, setResults] = useState<Record<number, Result>>({});
-  const [live, setLive] = useState<{ rssi: number; uuid: string; at: number } | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(0);
-  const [count, setCount] = useState(0);
-  const samples = useRef<number[]>([]);
-  const perHeading = useRef<number[][]>([]);
-  const phaseStart = useRef(0);
-  const phaseRef = useRef<Phase>("idle");
-  const suffixRef = useRef(suffix);
+  const [step, setStep] = useState(() => {
+    const i = CALIBRATION_DISTANCES.findIndex((d) => !points.some((p) => p.distance === d));
+    return i < 0 ? 0 : i;
+  });
+  const [snap, setSnap] = useState<Snapshot>({ now: 0, phase: "idle", heading: 0, elapsed: 0, until: RECORD_S, count: 0, heard: [] });
+  // The measurement runs on refs, driven by one timer; `snap` is what the UI renders.
+  const m = useRef({
+    phase: "idle" as Phase,
+    heading: 0,
+    phaseStart: 0,
+    until: RECORD_S,
+    extended: false,
+    samples: [] as number[], // loss in dB at the current heading
+    perHeading: [] as number[][],
+    suffix: normalize("0001"),
+    step,
+    points,
+    onChange,
+  });
+  const heard = useRef(new Map<string, Heard>());
   useEffect(() => {
-    phaseRef.current = phase;
-    suffixRef.current = suffix.trim().toLowerCase();
+    Object.assign(m.current, { suffix: normalize(suffix), step, points, onChange });
   });
 
   useEffect(() => {
@@ -68,89 +91,105 @@ export function Calibration({
 
   useEffect(() => {
     return subscribe((s) => {
-      if (!s.uuid.endsWith(suffixRef.current)) return;
-      setLive({ rssi: s.rssi, uuid: s.uuid, at: Date.now() });
-      if (phaseRef.current === "record") samples.current.push(s.rssi);
+      heard.current.set(s.uuid, { uuid: s.uuid, rssiAt1m: s.rssiAt1m, rssi: s.rssi, at: Date.now() });
+      const c = m.current;
+      if (c.phase === "record" && c.suffix && s.uuid.endsWith(c.suffix)) c.samples.push(s.rssiAt1m - s.rssi);
     });
   }, [subscribe]);
 
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(id);
+  const refresh = useCallback(() => {
+    const c = m.current;
+    const now = Date.now();
+    setSnap({
+      now,
+      phase: c.phase,
+      heading: c.heading,
+      elapsed: c.phase === "settle" || c.phase === "record" ? Math.max(0, (now - c.phaseStart) / 1000) : 0,
+      until: c.until,
+      count: c.samples.length,
+      heard: [...heard.current.values()],
+    });
   }, []);
 
+  const finishHeading = useCallback(() => {
+    const c = m.current;
+    c.perHeading[c.heading] = c.samples;
+    c.samples = [];
+    if (c.heading < HEADINGS.length - 1) {
+      c.heading++;
+      c.phase = "settle";
+      c.phaseStart = Date.now();
+      return;
+    }
+    const kept = rejectOutliers(c.perHeading.flat());
+    const distance = CALIBRATION_DISTANCES[c.step];
+    c.onChange(saveCalibrationPoint({ distance, loss: median(kept), sd: stdev(kept), count: kept.length }));
+    setStep(Math.min(c.step + 1, CALIBRATION_DISTANCES.length - 1));
+    c.heading = 0;
+    c.phase = "idle";
+  }, []);
+
+  // settle → record → (one automatic extension) → stalled or next heading.
   useEffect(() => {
-    if (phase === "idle") return;
     const id = setInterval(() => {
-      const t = (Date.now() - phaseStart.current) / 1000;
-      setElapsed(t);
-      setCount(samples.current.length);
-      if (phase === "settle" && t >= SETTLE_S) {
-        samples.current = [];
-        phaseStart.current = Date.now();
-        setElapsed(0);
-        setPhase("record");
-        return;
+      const c = m.current;
+      const t = (Date.now() - c.phaseStart) / 1000;
+      if (c.phase === "settle" && t >= SETTLE_S) {
+        c.samples = [];
+        c.until = RECORD_S;
+        c.extended = false;
+        c.phase = "record";
+        c.phaseStart = Date.now();
+      } else if (c.phase === "record" && t >= c.until) {
+        if (c.samples.length >= MIN_SAMPLES) finishHeading();
+        else if (!c.extended) {
+          c.extended = true;
+          c.until += EXTEND_S;
+        } else c.phase = "stalled";
       }
-      const data = samples.current;
-      if (phase !== "record" || t < RECORD_S || (data.length < TARGET_SAMPLES && t < MAX_RECORD_S)) return;
-      if (data.length < MIN_SAMPLES) {
-        setError(`Only ${data.length} samples heard at heading ${heading + 1}, even after waiting. Is beacon …${suffixRef.current} in range?`);
-        setPhase("idle");
-        return;
-      }
-      perHeading.current[heading] = data;
-      if (heading < HEADINGS.length - 1) {
-        phaseStart.current = Date.now();
-        setElapsed(0);
-        setHeading(heading + 1);
-        setPhase("settle");
-        return;
-      }
-      const pooled = perHeading.current.flat();
-      const kept = rejectOutliers(pooled);
-      const medians = perHeading.current.map(median);
-      setResults((r) => ({
-        ...r,
-        [POINTS[step].d]: {
-          median: median(kept),
-          sd: stdev(kept),
-          count: kept.length,
-          dropped: pooled.length - kept.length,
-          spread: Math.max(...medians) - Math.min(...medians),
-          short: perHeading.current.filter((h) => h.length < TARGET_SAMPLES).length,
-        },
-      }));
-      setStep(Math.min(step + 1, POINTS.length - 1));
-      setHeading(0);
-      setPhase("idle");
-    }, 200);
+      refresh();
+    }, 250);
     return () => clearInterval(id);
-  }, [phase, step, heading]);
+  }, [finishHeading, refresh]);
 
   function begin() {
-    setError(null);
-    setSaved(false);
-    perHeading.current = [];
-    setHeading(0);
-    phaseStart.current = Date.now();
-    setElapsed(0);
-    setPhase("settle");
+    Object.assign(m.current, { perHeading: [], samples: [], heading: 0, phase: "settle", phaseStart: Date.now() });
+    refresh();
   }
 
-  const fit = fitCalibration(POINTS.filter((p) => !p.check && results[p.d]).map((p) => ({ distance: p.d, rssi: results[p.d].median })));
-  const estimate = (d: number) => (fit && results[d] ? distanceFromRssi(results[d].median, fit.rssiAt1m, fit) : null);
-  const checkErrors = POINTS.filter((p) => p.check && results[p.d]).map((p) => Math.abs(estimate(p.d)! - p.d));
-  const fresh = live && now - live.at < 3000;
-  const seconds = phase === "settle" ? SETTLE_S : elapsed >= RECORD_S ? MAX_RECORD_S : RECORD_S;
+  function extend() {
+    const c = m.current;
+    // Resume the clock where it stopped, with EXTEND_S more to go.
+    c.phaseStart = Date.now() - c.until * 1000;
+    c.until += EXTEND_S;
+    c.phase = "record";
+    refresh();
+  }
+
+  function acceptShort() {
+    finishHeading();
+    refresh();
+  }
+
+  function cancel() {
+    Object.assign(m.current, { phase: "idle", heading: 0, samples: [], perHeading: [] });
+    refresh();
+  }
+
+  function reset() {
+    resetCalibration();
+    onChange([]);
+    setStep(0);
+  }
+
+  const { now, phase, heading, elapsed, until, count } = snap;
+  const distance = CALIBRATION_DISTANCES[step];
+  const wanted = normalize(suffix);
+  // Most recently heard beacon whose UUID ends with the typed suffix.
+  const live = wanted ? snap.heard.filter((h) => h.uuid.endsWith(wanted)).sort((a, b) => b.at - a.at)[0] : undefined;
+  const fresh = !!live && now - live.at < LIVE_MS;
   const busy = phase !== "idle";
-  const cur = POINTS[step];
-
-  function save() {
-    if (!fit || !live) return;
-    saveCalibration(live.uuid, { rssiAt1m: fit.rssiAt1m, n: fit.n });
-    setSaved(true);
-  }
+  const n = pathLossExponent(points);
 
   return (
     <div className="calib" role="dialog" aria-label="Calibration">
@@ -159,27 +198,23 @@ export function Calibration({
         <button className="ghost" onClick={onClose} disabled={busy}>Close</button>
       </header>
 
+      <p className="muted small">
+        Calibrates the room, not one beacon: the result applies to every beacon. Each beacon already reports its own RSSI at 1 m; this measures the extra
+        loss at {CALIBRATION_DISTANCES.join(", ")} m. Use any one beacon.
+      </p>
+
       <label>
         Beacon UUID ends with
-        <input
-          value={suffix}
-          disabled={busy}
-          inputMode="text"
-          autoCapitalize="none"
-          onChange={(e) => {
-            setSuffix(e.target.value);
-            setResults({});
-            setStep(0);
-            setLive(null);
-            setSaved(false);
-          }}
-        />
+        <input value={suffix} disabled={busy} inputMode="text" autoCapitalize="none" onChange={(e) => setSuffix(e.target.value)} />
       </label>
 
       <p className={`calib-live${fresh ? "" : " stale"}`}>
         {fresh ? (
           <>
-            <b>{Math.round(live.rssi)} dBm</b> <span className="muted small">…{live.uuid.slice(-12)}</span>
+            <b>{Math.round(live.rssi)} dBm</b>{" "}
+            <span className="muted small">
+              …{live.uuid.slice(-12)} · ref {live.rssiAt1m} dBm · {distanceFromRssi(live.rssi, live.rssiAt1m, points).toFixed(1)} m now
+            </span>
           </>
         ) : (
           <span className="muted">Beacon …{suffix} not heard</span>
@@ -189,76 +224,76 @@ export function Calibration({
       <section className="calib-step">
         {busy ? (
           <p>
-            <b>{cur.d} m</b> · heading {heading + 1}/{HEADINGS.length}: <b>{HEADINGS[heading]}</b>. Hold the phone at beacon height and keep still.
+            <b>{distance} m</b> · heading {heading + 1}/{HEADINGS.length}: <b>{HEADINGS[heading]}</b>. Hold the phone at beacon height and keep still.
           </p>
         ) : (
           <p>
-            Put the phone <b>{cur.d} m</b> from the beacon{cur.check ? " (check point: kept out of the fit)" : ""}, at the same height, nothing between
-            them. Start, then turn on the spot as prompted: {HEADINGS.length} headings × {RECORD_S} s.
+            Put the phone <b>{distance} m</b> from the beacon, at the same height, nothing between them. Start, then turn on the spot as prompted:{" "}
+            {HEADINGS.length} headings × {RECORD_S} s.
           </p>
         )}
-        {busy && (
+        {(phase === "settle" || phase === "record") && (
           <div className="calib-bar" aria-label={phase === "settle" ? "Get ready" : "Recording"}>
-            <div style={{ width: `${Math.min(100, (elapsed / seconds) * 100)}%` }} className={phase} />
+            <div
+              style={{ width: `${Math.min(100, (elapsed / (phase === "settle" ? SETTLE_S : until)) * 100)}%` }}
+              className={phase}
+            />
             <span>
-              {phase === "settle" ? `Get ready… ${Math.ceil(SETTLE_S - elapsed)}` : `Recording ${Math.max(0, Math.ceil(RECORD_S - elapsed))} s${elapsed >= RECORD_S ? " (extending for more samples)" : ""} · ${count} samples`}
+              {phase === "settle"
+                ? `Get ready… ${Math.ceil(SETTLE_S - elapsed)}`
+                : `Recording ${Math.max(0, Math.ceil(until - elapsed))} s${until > RECORD_S ? " (extended)" : ""} · ${count} samples`}
             </span>
           </div>
         )}
-        {error && <p className="error">{error}</p>}
-        <button disabled={busy || !fresh} onClick={begin}>
-          {busy ? "Measuring…" : results[cur.d] ? `Redo ${cur.d} m` : `Start ${cur.d} m`}
-        </button>
+        {phase === "stalled" && (
+          <>
+            <p className="error">
+              Only {count} sample{count === 1 ? "" : "s"} at this heading (need {MIN_SAMPLES}). The headings already done are kept.
+            </p>
+            <div className="calib-actions">
+              <button onClick={extend}>Extend {EXTEND_S} s</button>
+              {count > 0 && <button className="ghost" onClick={acceptShort}>Use {count}</button>}
+              <button className="ghost" onClick={cancel}>Cancel {distance} m</button>
+            </div>
+          </>
+        )}
+        {phase === "idle" && (
+          <button disabled={!fresh} onClick={begin}>
+            {points.some((p) => p.distance === distance) ? `Redo ${distance} m` : `Start ${distance} m`}
+          </button>
+        )}
       </section>
 
       <ul className="calib-list">
-        {POINTS.map((p, i) => {
-          const r = results[p.d];
-          const est = estimate(p.d);
+        {CALIBRATION_DISTANCES.map((d, i) => {
+          const p = points.find((q) => q.distance === d);
           return (
-            <li key={p.d}>
+            <li key={d}>
               <button className={`ghost${i === step ? " current" : ""}`} disabled={busy} onClick={() => setStep(i)}>
-                {p.d} m{p.check ? " ✓" : ""}
+                {d} m
               </button>
-              <span>
-                {r ? `${r.median.toFixed(1)} dBm ±${r.sd.toFixed(1)} · ${r.count} (−${r.dropped}) · dir ${r.spread.toFixed(0)} dB${r.short ? ` · ⚠${r.short} short` : ""}` : "—"}
-                {r && est !== null && ` → ${est.toFixed(1)} m`}
-              </span>
+              <span>{p ? `−${p.loss.toFixed(1)} dB ±${p.sd.toFixed(1)} · ${p.count} samples · n ${(p.loss / (10 * Math.log10(d))).toFixed(2)}` : "—"}</span>
             </li>
           );
         })}
       </ul>
-      <p className="muted small">
-        ⚠ short = headings that stayed under {TARGET_SAMPLES} samples after waiting. ✓ = check point. −n = outliers rejected; dir = difference between the highest and lowest heading (large means orientation matters, or the
-        spot is multipath-heavy).
-      </p>
 
       <section className="calib-result">
-        {fit ? (
-          <>
-            <dl>
-              <dt>RSSI @ 1 m</dt>
-              <dd>{fit.rssiAt1m.toFixed(1)} dBm</dd>
-              <dt>Path-loss n</dt>
-              <dd>{fit.n.toFixed(2)}</dd>
-              <dt>Fit error (training)</dt>
-              <dd>±{fit.residual.toFixed(1)} dB</dd>
-              {checkErrors.length > 0 && (
-                <>
-                  <dt>Check error, median</dt>
-                  <dd>{median(checkErrors).toFixed(1)} m</dd>
-                  <dt>Check error, p90</dt>
-                  <dd>{percentile(checkErrors, 0.9).toFixed(1)} m</dd>
-                </>
-              )}
-            </dl>
-            {checkErrors.length === 0 && <p className="muted small">Measure the ✓ distances (4 m, 6 m) to get an honest error.</p>}
-            {checkErrors.length === 1 && <p className="muted small">With one check point the p90 is just that error.</p>}
-            <button disabled={busy || !fresh} onClick={save}>{saved ? "Saved" : "Save for this beacon"}</button>
-          </>
-        ) : (
-          <p className="muted small">Measure at least two non-check distances (1 m first) to get a fit.</p>
-        )}
+        <dl>
+          <dt>Status</dt>
+          <dd>
+            {points.length}/{CALIBRATION_DISTANCES.length} distances
+          </dd>
+          <dt>Path-loss n (overall)</dt>
+          <dd>
+            {n.toFixed(2)}
+            {points.length === 0 && " (default)"}
+          </dd>
+        </dl>
+        <p className="muted small">Saved on this phone as each distance finishes. It is kept when the app restarts.</p>
+        <button className="ghost" disabled={busy || points.length === 0} onClick={reset}>
+          Reset calibration
+        </button>
       </section>
     </div>
   );

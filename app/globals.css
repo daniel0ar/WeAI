@@ -195,6 +195,7 @@ html, body { height: 100%; overflow: hidden; }
 .calib-bar div { position: absolute; inset: 0 auto 0 0; background: #2b3560; }
 .calib-bar div.record { background: #ffc43d; opacity: .6; }
 .calib-bar span { position: relative; display: block; line-height: 28px; text-align: center; font-size: .85rem; }
+.calib-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .calib-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .calib-list li { display: flex; align-items: center; gap: 12px; font-variant-numeric: tabular-nums; font-size: .85rem; }
 .calib-list button { width: 64px; }
