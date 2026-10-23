@@ -1,7 +1,7 @@
 "use client";
 
 import { Capacitor } from "@capacitor/core";
-import { BleClient } from "@capacitor-community/bluetooth-le";
+import { BleClient, ScanMode } from "@capacitor-community/bluetooth-le";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { APPLE_COMPANY_ID, isOurs, parseIBeacon } from "./ibeacon";
 
@@ -38,7 +38,19 @@ interface Tracked {
 
 const isNative = () => Capacitor.isNativePlatform();
 
-export function useBleScan() {
+export interface RawSample {
+  uuid: string;
+  major: number;
+  minor: number;
+  rssi: number; // unsmoothed, dBm
+}
+
+// onSample sees every advertisement before smoothing (used by calibration).
+export function useBleScan(onSample?: (s: RawSample) => void) {
+  const sampleCb = useRef(onSample);
+  useEffect(() => {
+    sampleCb.current = onSample;
+  });
   const [supported, setSupported] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [beacons, setBeacons] = useState<DetectedBeacon[]>([]);
@@ -76,6 +88,7 @@ export function useBleScan() {
     const onFrame = (data: DataView | undefined, rssi: number | undefined) => {
       const frame = data && rssi !== undefined ? parseIBeacon(data) : null;
       if (!frame || rssi === undefined || !isOurs(frame)) return;
+      sampleCb.current?.({ uuid: frame.uuid, major: frame.major, minor: frame.minor, rssi });
       const key = `${frame.uuid}:${frame.major}:${frame.minor}`;
       const prev = tracked.current.get(key);
       tracked.current.set(key, {
@@ -109,8 +122,9 @@ export function useBleScan() {
           stop();
           setError("Bluetooth was turned off.");
         });
-        // Duplicates are needed: every repeated advertisement carries a fresh RSSI sample.
-        await BleClient.requestLEScan({ allowDuplicates: true }, (r) => onFrame(r.manufacturerData?.[APPLE_COMPANY_ID], r.rssi));
+        // Duplicates are needed: every repeated advertisement carries a fresh RSSI sample, and
+        // low latency gives the most of them (Android's default, balanced, samples sparsely).
+        await BleClient.requestLEScan({ allowDuplicates: true, scanMode: ScanMode.SCAN_MODE_LOW_LATENCY }, (r) => onFrame(r.manufacturerData?.[APPLE_COMPANY_ID], r.rssi));
       } else {
         const onAdvert = (e: Event) => {
           const a = e as AdvertisementEvent;

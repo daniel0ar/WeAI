@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getUser } from "@/lib/auth";
-import { useBleScan } from "@/lib/useBleScan";
+import { useBleScan, type RawSample } from "@/lib/useBleScan";
+import { Calibration } from "./_components/Calibration";
 import { beaconKey, DotModal, Radar, RADAR_RANGE_M, TRIGGER_ATTR, type Beacon } from "./_components/Radar";
 
 export default function HomePage() {
@@ -13,7 +14,15 @@ export default function HomePage() {
   const [testBeacons, setTestBeacons] = useState<Beacon[]>([]);
   // The one open popup (list or radar), by beacon key so it survives the periodic list refresh.
   const [pickedKey, setPickedKey] = useState<string | null>(null);
-  const ble = useBleScan();
+  const [calibrating, setCalibrating] = useState(false);
+  const sampleSink = useRef<((s: RawSample) => void) | null>(null);
+  const subscribeSamples = useCallback((fn: (s: RawSample) => void) => {
+    sampleSink.current = fn;
+    return () => {
+      sampleSink.current = null;
+    };
+  }, []);
+  const ble = useBleScan((s) => sampleSink.current?.(s));
 
   useEffect(() => {
     if (!getUser()) router.replace("/login");
@@ -67,6 +76,14 @@ export default function HomePage() {
         <div className="backdrop drawer-backdrop" onClick={() => setMenuOpen(false)}>
           <nav className="drawer" aria-label="Menu" onClick={(e) => e.stopPropagation()}>
             <button className="ghost" onClick={() => setMenuOpen(false)}>Close</button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setCalibrating(true);
+              }}
+            >
+              Calibrate
+            </button>
             {testBeacons.length > 0 ? (
               <button onClick={resetTestBeacons}>Reset</button>
             ) : (
@@ -108,6 +125,10 @@ export default function HomePage() {
       )}
 
       <Radar active={ble.scanning} beacons={inRange} selectedKey={pickedKey} onSelect={setPickedKey} />
+
+      {calibrating && (
+        <Calibration subscribe={subscribeSamples} scanning={ble.scanning} start={ble.start} onClose={() => setCalibrating(false)} />
+      )}
 
       {ble.error && <p className="toast error">{ble.error}</p>}
       {!ble.supported && <p className="toast muted small">BLE scanning is only available in the Android app.</p>}

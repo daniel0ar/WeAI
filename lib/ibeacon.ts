@@ -43,6 +43,7 @@ export function parseIBeacon(data: DataView): IBeaconFrame | null {
 }
 
 // Log-distance path-loss model: d = 10^((RSSI@1m - RSSI) / (10 n)).
-export function distanceFromRssi(rssi: number, rssiAt1m: number) {
-  return 10 ** ((rssiAt1m - rssi) / (10 * PATH_LOSS_EXPONENT));
+// A calibration measured with this phone (see lib/calibration.ts) overrides the beacon's advertised values.
+export function distanceFromRssi(rssi: number, rssiAt1m: number, cal?: { rssiAt1m: number; n: number }) {
+  return 10 ** (((cal?.rssiAt1m ?? rssiAt1m) - rssi) / (10 * (cal?.n ?? PATH_LOSS_EXPONENT)));
 }
