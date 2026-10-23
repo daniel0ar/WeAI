@@ -4,8 +4,8 @@ export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "RobotFind",
-    short_name: "RobotFind",
+    name: "WeAI",
+    short_name: "WeAI",
     description: "Shows your GPS location and counts nearby BLE devices.",
     start_url: "/",
     scope: "/",

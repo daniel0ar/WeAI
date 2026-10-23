@@ -127,7 +127,8 @@ export default function HomePage() {
   return (
     <main className="screen">
       <header className="topbar">
-        <span className="logo">WeAI</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/weai-logo-white.png" alt="WeAI" className="logo" />
         <button className="icon-btn" aria-label="Menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M4 6h16M4 12h16M4 18h16" />

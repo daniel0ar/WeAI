@@ -14,7 +14,8 @@ export default function LoginPage() {
   return (
     <main className="center">
       <div className="card">
-        <h1>RobotFind</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/weai-logo-white.png" alt="WeAI" className="brand-logo" />
         <p className="muted">GPS location and nearby BLE devices</p>
         <button
           onClick={() => {

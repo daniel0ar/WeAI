@@ -3,9 +3,9 @@ import "./globals.css";
 import { RegisterSW } from "./_components/RegisterSW";
 
 export const metadata: Metadata = {
-  title: "RobotFind",
+  title: "WeAI",
   description: "Shows your GPS location and counts nearby BLE devices.",
-  appleWebApp: { capable: true, title: "RobotFind", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "WeAI", statusBarStyle: "black-translucent" },
   icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
 };
 

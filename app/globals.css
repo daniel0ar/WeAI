@@ -53,7 +53,8 @@ html, body { height: 100%; overflow: hidden; }
   position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 16px; right: 12px;
   display: flex; justify-content: space-between; align-items: center;
 }
-.logo { font-size: 1.5rem; font-weight: 700; letter-spacing: .02em; }
+.logo { height: 28px; width: auto; display: block; }
+.brand-logo { width: 180px; max-width: 70%; height: auto; justify-self: center; }
 .detected {
   position: absolute; left: 16px; margin: 0; font-size: 1.1rem; font-weight: 600;
   top: calc(72px + env(safe-area-inset-top));
