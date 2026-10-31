@@ -8,6 +8,7 @@ import { loadRobots, type Registry, type RobotRecord } from "@/lib/robots";
 import { useBleScan, type RawSample } from "@/lib/useBleScan";
 import { AI_LOCATION, CONTROL, decodeUuid, encodeUuid, MOBILITY, robotKey, type RobotMeta } from "@/lib/weaiUuid";
 import { AddRobot } from "./_components/AddRobot";
+import { AskAi } from "./_components/AskAi";
 import { Calibration } from "./_components/Calibration";
 import { beaconKey, DotModal, Radar, RADAR_RANGE_M, robotLabel, TRIGGER_ATTR, type Beacon } from "./_components/Radar";
 
@@ -56,6 +57,8 @@ export default function HomePage() {
   const [calibration, setCalibration] = useState<CalibrationPoint[]>([]);
   const [robots, setRobots] = useState<Registry>({});
   const [addingRobot, setAddingRobot] = useState(false);
+  // The AI chat replaces the Scan button while open.
+  const [askingAi, setAskingAi] = useState(false);
   const sampleSink = useRef<((s: RawSample) => void) | null>(null);
   const subscribeSamples = useCallback((fn: (s: RawSample) => void) => {
     sampleSink.current = fn;
@@ -218,13 +221,23 @@ export default function HomePage() {
 
       {ble.error && <p className="toast error">{ble.error}</p>}
       {!ble.supported && <p className="toast muted small">BLE scanning is only available in the Android app.</p>}
-      <button
-        className={`scan-btn${ble.scanning ? " scanning" : ""}`}
-        disabled={!ble.supported}
-        onClick={() => (ble.scanning ? ble.stop() : ble.start())}
-      >
-        {ble.scanning ? "Scanning" : "Scan"}
-      </button>
+      {askingAi ? (
+        // Real beacons only: test robots are not sent to the AI.
+        <AskAi detected={real} onClose={() => setAskingAi(false)} />
+      ) : (
+        <>
+          <button
+            className={`scan-btn${ble.scanning ? " scanning" : ""}`}
+            disabled={!ble.supported}
+            onClick={() => (ble.scanning ? ble.stop() : ble.start())}
+          >
+            {ble.scanning ? "Scanning" : "Scan"}
+          </button>
+          <button className="ai-fab" aria-label="Ask AI about nearby robots" onClick={() => setAskingAi(true)}>
+            ✨
+          </button>
+        </>
+      )}
     </main>
   );
 }

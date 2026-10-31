@@ -9,6 +9,11 @@ const withSerwist = withSerwistInit({
 
 const nextConfig: NextConfig = {
   output: "export", // static files in "./out", consumed by Capacitor
+  // SKILL.md is imported as a string (the AI's system prompt).
+  webpack(config) {
+    config.module.rules.push({ test: /\.md$/, type: "asset/source" });
+    return config;
+  },
 };
 
 export default withSerwist(nextConfig);

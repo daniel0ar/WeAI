@@ -224,3 +224,40 @@ label.invalid input, label.invalid select { border-color: #ff8a8a; }
 .saved-actions { display: grid; gap: 6px; }
 .saved-actions button { padding: 6px 10px; font-size: .8rem; }
 button.danger { background: #c94a4a; border: 1px solid #c94a4a; }
+
+/* Ask AI: the ✨ button, then the chat panel that takes the Scan button's place. */
+.ai-fab {
+  position: absolute; right: 16px; bottom: calc(24px + env(safe-area-inset-bottom));
+  width: 50px; height: 50px; padding: 0; border-radius: 50%; display: grid; place-items: center;
+  background: #151c34; border: 1px solid #2b3560; font-size: 1.4rem; line-height: 1;
+}
+.ai-panel {
+  position: absolute; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 5;
+  max-height: 50dvh; display: flex; flex-direction: column; overflow: hidden;
+  background: #151c34; border: 1px solid #2b3560; border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+.ai-thread {
+  position: relative; /* offsetTop of each turn is measured from here */
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 14px;
+}
+.ai-turn { padding-bottom: 12px; }
+.ai-turn + .ai-turn { border-top: 1px solid #2b3560; }
+/* The question floats above its answer while the answer scrolls. */
+.ai-q {
+  position: sticky; top: 0; margin: 0; padding: 10px 0 6px; background: #151c34;
+  color: #8b97bd; font-size: .8rem; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ai-a { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .95rem; line-height: 1.45; }
+.ai-a.waiting { color: #8b97bd; font-style: italic; }
+.ai-a.error { color: #ff8a8a; }
+.ai-input { flex: none; display: flex; align-items: flex-end; gap: 2px; padding: 6px; }
+.ai-thread + .ai-input { border-top: 1px solid #2b3560; }
+.ai-input textarea {
+  flex: 1; min-width: 0; resize: none; field-sizing: content; min-height: 44px; max-height: 7.5em;
+  padding: 11px 12px; border-radius: 10px; border: 1px solid #2b3560;
+  background: #0b1020; color: inherit; font: inherit; font-size: 1rem; line-height: 1.3;
+}
+.ai-send { color: #4f7cff; }
+.ai-send:disabled { color: #3a4570; cursor: default; }
